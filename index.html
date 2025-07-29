@@ -1,145 +1,175 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Apartment Booking</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.css" rel="stylesheet">
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Apartment Booking Calendar</title>
+  <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.css" rel="stylesheet" />
   <style>
-    body {
-      font-family: sans-serif;
-      background: #f9fafb;
-      padding: 20px;
-    }
-    #calendar {
-      max-width: 800px;
-      margin: 0 auto;
-      background: white;
-      padding: 20px;
-      border-radius: 10px;
-      box-shadow: 0 0 10px rgba(0,0,0,0.1);
-    }
-    .fc-day-past {
-      background-color: #f0f0f0 !important;
-      pointer-events: none;
-      opacity: 0.6;
-    }
-    .fc-day-booked {
-      background-color: #f87171 !important;
-      pointer-events: none;
-    }
-    .fc-day-selected {
-      background-color: #60a5fa !important;
-    }
-    button {
-      display: block;
-      margin: 20px auto;
-      padding: 10px 20px;
-      background: #3b82f6;
-      color: white;
-      border: none;
-      border-radius: 6px;
-      font-size: 16px;
-    }
+    body { font-family: Arial, sans-serif; margin: 0; padding: 10px; }
+    #calendar { max-width: 600px; margin: auto; }
+    #bookBtn { margin-top: 10px; width: 100%; padding: 10px; font-size: 16px; }
   </style>
 </head>
 <body>
-  <h2 style="text-align:center;">Apartment Calendar</h2>
-  <div id="calendar"></div>
-  <button id="bookBtn">Book Selected Dates</button>
 
-  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
-  <script>
-    const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzh0MHN6wzQBbDKWKpcgOluOD_HZHsMVZWM0Wv7SfoPeFwdKukWpNIRCJCMsmuJcilvbw/exec'; // Replace this
-    const urlParams = new URLSearchParams(window.location.search);
-    const a_id = urlParams.get('a_id');
+<h2>Apartment Booking Calendar (apt001)</h2>
+<div id="calendar"></div>
+<button id="bookBtn" disabled>Book Selected Dates</button>
 
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
+<script>
+  const WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbxKf1SyYft1ClKgZgaaesA0PTf00lRi0Y4X9EHP30-uDzaWlMjz2HC4JTpXFAUDprxEUQ/exec'; // <-- Replace with your Apps Script Web App URL
+  const a_id = 'apt001'; // Change apartment ID as needed
+  let bookedRanges = [];
+  let calendar;
+  let selectedDates = [];
+
+  // Format Date to YYYY-MM-DD for FullCalendar
+  function formatYMD(date) {
+    return date.toISOString().split('T')[0];
+  }
+
+  // Fetch bookings from backend
+  async function fetchBookings() {
+    const res = await fetch(`${WEBAPP_URL}?a_id=${a_id}`);
+    const data = await res.json();
+    if (data.error) {
+      alert("Error fetching bookings: " + data.error);
+      return [];
+    }
+    return data.bookings;
+  }
+
+  // Expand booking ranges into individual dates
+  function expandDates(start, end) {
+    let dates = [];
+    let current = new Date(start);
+    let last = new Date(end);
+    while (current <= last) {
+      dates.push(formatYMD(current));
+      current.setDate(current.getDate() + 1);
+    }
+    return dates;
+  }
+
+  // Initialize calendar
+  async function initCalendar() {
+    const bookings = await fetchBookings();
+
+    bookedRanges = [];
     let bookedDates = new Set();
-    let selectedDates = new Set();
 
-    async function fetchBookedDates() {
-      try {
-        const res = await fetch(`${WEB_APP_URL}?a_id=${a_id}`);
-        const data = await res.json();
-        bookedDates = new Set(data.dates);
-      } catch (err) {
-        alert("Failed to load booked dates: " + err.message);
-      }
+    bookings.forEach(b => {
+      const rangeDates = expandDates(b.start, b.end);
+      rangeDates.forEach(d => bookedDates.add(d));
+      bookedRanges.push({start: b.start, end: b.end});
+    });
+
+    const today = new Date();
+    const pastDates = [];
+    for(let d = new Date(today); d > new Date(today.getFullYear(), 0, 1); d.setDate(d.getDate() - 1)) {
+      pastDates.push(formatYMD(d));
     }
 
-    function renderCalendar() {
-      const calendarEl = document.getElementById('calendar');
-      const calendar = new FullCalendar.Calendar(calendarEl, {
-        initialView: 'dayGridMonth',
-        selectable: true,
-        dateClick: function(info) {
-          const dateStr = info.dateStr;
-          const today = new Date().toISOString().split("T")[0];
+    // Create FullCalendar instance
+    const calendarEl = document.getElementById('calendar');
 
-          if (dateStr < today || bookedDates.has(dateStr)) return;
+    calendar = new FullCalendar.Calendar(calendarEl, {
+      initialView: 'dayGridMonth',
+      selectable: true,
+      selectOverlap: false,
+      selectAllow: function(selectInfo) {
+        // Don't allow selecting past dates or booked dates
+        const start = selectInfo.startStr;
+        const end = new Date(selectInfo.end);
+        end.setDate(end.getDate() - 1); // FullCalendar exclusive end
 
-          if (selectedDates.has(dateStr)) {
-            selectedDates.delete(dateStr);
-            info.dayEl.classList.remove("fc-day-selected");
-          } else {
-            selectedDates.add(dateStr);
-            info.dayEl.classList.add("fc-day-selected");
-          }
-        },
-        datesSet: function() {
-          document.querySelectorAll('.fc-daygrid-day').forEach(cell => {
-            const date = cell.getAttribute('data-date');
-            const today = new Date().toISOString().split("T")[0];
-
-            if (date < today) {
-              cell.classList.add('fc-day-past');
-            } else if (bookedDates.has(date)) {
-              cell.classList.add('fc-day-booked');
-            }
-          });
+        let current = new Date(start);
+        while(current <= end) {
+          const d = formatYMD(current);
+          if (bookedDates.has(d) || new Date(d) < today) return false;
+          current.setDate(current.getDate() + 1);
         }
-      });
-      calendar.render();
-    }
-
-    document.getElementById("bookBtn").addEventListener("click", async () => {
-      if (selectedDates.size === 0) {
-        alert("Select at least one date.");
-        return;
-      }
-
-      const sortedDates = Array.from(selectedDates).sort();
-      const startDate = sortedDates[0];
-      const endDate = sortedDates[sortedDates.length - 1];
-
-      if (!confirm(`Confirm booking for:\n\n${sortedDates.join('\n')}`)) return;
-
-      try {
-        const res = await fetch(WEB_APP_URL, {
-          method: "POST",
-          body: JSON.stringify({ a_id, startDate, endDate }),
-          headers: { "Content-Type": "application/json" }
-        });
-        const result = await res.json();
-        if (result.success) {
-          alert("Booking successful!");
-          location.reload();
-        } else {
-          alert("Booking error: " + result.message);
+        return true;
+      },
+      select: function(info) {
+        selectedDates = [];
+        const start = info.start;
+        const end = new Date(info.end);
+        end.setDate(end.getDate() - 1);
+        let current = new Date(start);
+        while (current <= end) {
+          selectedDates.push(formatYMD(current));
+          current.setDate(current.getDate() + 1);
         }
-      } catch (err) {
-        alert("Network error: " + err.message);
+        updateBookButton();
+      },
+      unselect: function() {
+        selectedDates = [];
+        updateBookButton();
+      },
+      dayCellDidMount: function(info) {
+        const d = info.date;
+        const dateStr = formatYMD(d);
+
+        // Grey out past dates
+        if (d < today) {
+          info.el.style.backgroundColor = '#eee';
+          info.el.style.color = '#999';
+        }
+        // Red for booked
+        else if (bookedDates.has(dateStr)) {
+          info.el.style.backgroundColor = '#ff4d4d';
+          info.el.style.color = 'white';
+          info.el.style.pointerEvents = 'none';
+        }
+        // Green for available
+        else {
+          info.el.style.backgroundColor = '#b0f2b6';
+          info.el.style.color = '#000';
+        }
       }
     });
 
-    (async () => {
-      if (!a_id) {
-        alert("Missing a_id in URL. Use ?a_id=apt001");
-        return;
-      }
-      await fetchBookedDates();
-      renderCalendar();
-    })();
-  </script>
+    calendar.render();
+  }
+
+  function updateBookButton() {
+    const btn = document.getElementById('bookBtn');
+    btn.disabled = selectedDates.length === 0;
+  }
+
+  // POST new booking
+  async function submitBooking() {
+    if (selectedDates.length === 0) return alert("Select dates first");
+
+    const start = selectedDates[0];
+    const end = selectedDates[selectedDates.length - 1];
+
+    const res = await fetch(WEBAPP_URL, {
+      method: 'POST',
+      body: JSON.stringify({ a_id, start, end }),
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      alert("Booking successful!");
+      selectedDates = [];
+      calendar.unselect();
+      // Refresh calendar bookings
+      calendar.destroy();
+      await initCalendar();
+      updateBookButton();
+    } else {
+      alert("Booking failed: " + (data.error || "Unknown error"));
+    }
+  }
+
+  document.getElementById('bookBtn').addEventListener('click', submitBooking);
+
+  initCalendar();
+</script>
 </body>
 </html>
