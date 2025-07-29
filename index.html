@@ -23,158 +23,118 @@
 
 <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
 <script>
-  const WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbxKf1SyYft1ClKgZgaaesA0PTf00lRi0Y4X9EHP30-uDzaWlMjz2HC4JTpXFAUDprxEUQ/exec'; // <-- Replace with your Apps Script Web App URL
-  const a_id = 'apt001'; // Change apartment ID as needed
-  let bookedDates = new Set();
-  let pastDates = new Set();
-  let selectedDates = new Set();
+  const WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbxKf1SyYft1ClKgZgaaesA0PTf00lRi0Y4X9EHP30-uDzaWlMjz2HC4JTpXFAUDprxEUQ/exec'; // 🔁 Replace this
+  const a_id = 'apt001';
 
-  // Format Date to YYYY-MM-DD for FullCalendar and easy comparison
+  let bookedDates = new Set();
+  let selectedDates = new Set();
+  let calendar;
+
   function formatYMD(date) {
     return date.toISOString().split('T')[0];
   }
 
-  // Fetch bookings from backend
   async function fetchBookings() {
     const res = await fetch(`${WEBAPP_URL}?a_id=${a_id}`);
     const data = await res.json();
-    if (data.error) {
-      alert("Error fetching bookings: " + data.error);
-      return [];
-    }
-    return data.bookings;
+    return data.bookings || [];
   }
 
-  // Expand booking ranges into individual dates
   function expandDates(start, end) {
-    let dates = [];
-    let current = new Date(start);
-    let last = new Date(end);
+    const out = [];
+    const current = new Date(start);
+    const last = new Date(end);
     while (current <= last) {
-      dates.push(formatYMD(current));
+      out.push(formatYMD(new Date(current)));
       current.setDate(current.getDate() + 1);
     }
-    return dates;
+    return out;
   }
 
-  // Initialize calendar
+  function toggleDateSelection(dateStr, el) {
+    if (selectedDates.has(dateStr)) {
+      selectedDates.delete(dateStr);
+      el.style.backgroundColor = '#b0f2b6'; // green
+      el.style.color = '#000';
+    } else {
+      selectedDates.add(dateStr);
+      el.style.backgroundColor = '#4a90e2'; // blue
+      el.style.color = 'white';
+    }
+    document.getElementById('bookBtn').disabled = selectedDates.size === 0;
+  }
+
   async function initCalendar() {
     const bookings = await fetchBookings();
+    bookedDates = new Set();
 
-    bookedDates.clear();
     bookings.forEach(b => {
-      const rangeDates = expandDates(b.start, b.end);
-      rangeDates.forEach(d => bookedDates.add(d));
+      expandDates(b.start, b.end).forEach(d => bookedDates.add(d));
     });
 
     const today = new Date();
-    pastDates.clear();
-    // Collect past dates in this month and before
-    // (we'll handle past dates on the fly instead)
 
     const calendarEl = document.getElementById('calendar');
+    calendarEl.innerHTML = ''; // Clear previous calendar (if reloading)
 
-    let calendar = new FullCalendar.Calendar(calendarEl, {
+    calendar = new FullCalendar.Calendar(calendarEl, {
       initialView: 'dayGridMonth',
-      // Disable built-in selection, we do manual day clicks
       selectable: false,
       dayCellDidMount: function(info) {
-        const dateStr = formatYMD(info.date);
+        const date = info.date;
+        const dateStr = formatYMD(date);
+        const el = info.el;
 
-        // Style cells:
-        if (info.date < today) {
-          // Past dates grey and disabled
-          info.el.style.backgroundColor = '#eee';
-          info.el.style.color = '#999';
-          info.el.style.pointerEvents = 'none';
-          info.el.style.cursor = 'default';
-        } else if (bookedDates.has(dateStr)) {
-          // Booked dates red and disabled
-          info.el.style.backgroundColor = '#ff4d4d';
-          info.el.style.color = 'white';
-          info.el.style.pointerEvents = 'none';
-          info.el.style.cursor = 'default';
-        } else {
-          // Available dates green
-          info.el.style.backgroundColor = '#b0f2b6';
-          info.el.style.color = '#000';
-          info.el.style.pointerEvents = 'auto';
-          info.el.style.cursor = 'pointer';
-
-          // Add click listener for selecting/deselecting
-          info.el.addEventListener('click', () => {
-            toggleDateSelection(dateStr, info.el);
-          });
+        if (date < new Date().setHours(0,0,0,0)) {
+          el.style.backgroundColor = '#eee';
+          el.style.color = '#999';
+          el.style.pointerEvents = 'none';
+          return;
         }
+
+        if (bookedDates.has(dateStr)) {
+          el.style.backgroundColor = '#ff4d4d';
+          el.style.color = 'white';
+          el.style.pointerEvents = 'none';
+          return;
+        }
+
+        el.style.backgroundColor = '#b0f2b6'; // green
+        el.style.color = '#000';
+        el.style.cursor = 'pointer';
+
+        el.addEventListener('click', () => toggleDateSelection(dateStr, el));
       }
     });
 
     calendar.render();
   }
 
-  // Toggle date in selectedDates and update cell color
-  function toggleDateSelection(dateStr, cellEl) {
-    if (selectedDates.has(dateStr)) {
-      // Deselect
-      selectedDates.delete(dateStr);
-      cellEl.style.backgroundColor = '#b0f2b6'; // green
-      cellEl.style.color = '#000';
-    } else {
-      // Select
-      selectedDates.add(dateStr);
-      cellEl.style.backgroundColor = '#4a90e2'; // blue
-      cellEl.style.color = 'white';
-    }
-    updateBookButton();
-  }
-
-  function updateBookButton() {
-    const btn = document.getElementById('bookBtn');
-    btn.disabled = selectedDates.size === 0;
-  }
-
-  // POST new booking
   async function submitBooking() {
-    if (selectedDates.size === 0) return alert("Select dates first");
+    if (selectedDates.size === 0) return;
 
-    // Convert selectedDates Set to array and sort
-    const datesArr = Array.from(selectedDates).sort();
+    const sortedDates = Array.from(selectedDates).sort();
+    const start = sortedDates[0];
+    const end = sortedDates[sortedDates.length - 1];
 
-    // Validate continuous dates (optional but recommended)
-    for (let i = 1; i < datesArr.length; i++) {
-      const prev = new Date(datesArr[i - 1]);
-      const curr = new Date(datesArr[i]);
-      prev.setDate(prev.getDate() + 1);
-      if (curr.getTime() !== prev.getTime()) {
-        return alert("Please select continuous dates only");
-      }
-    }
-
-    const start = datesArr[0];
-    const end = datesArr[datesArr.length - 1];
-
-    const res = await fetch(WEBAPP_URL, {
+    const response = await fetch(WEBAPP_URL, {
       method: 'POST',
-      body: JSON.stringify({ a_id, start, end }),
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ a_id, start, end })
     });
-    const data = await res.json();
 
-    if (data.success) {
-      alert("Booking successful!");
+    const result = await response.json();
+    if (result.success) {
+      alert('Booking successful!');
       selectedDates.clear();
-      // Rerender calendar to refresh booked dates
-      const calendarEl = document.getElementById('calendar');
-      calendarEl.innerHTML = '';
-      await initCalendar();
-      updateBookButton();
+      document.getElementById('bookBtn').disabled = true;
+      await initCalendar(); // Reload calendar
     } else {
-      alert("Booking failed: " + (data.error || "Unknown error"));
+      alert('Booking failed: ' + result.error);
     }
   }
 
   document.getElementById('bookBtn').addEventListener('click', submitBooking);
-
   initCalendar();
 </script>
 </body>
