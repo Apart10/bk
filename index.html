@@ -1,62 +1,162 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8"/><title>Booking Calendar</title><meta name="viewport" content="width=device-width,initial-scale=1"/><link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.css" rel="stylesheet"><style>
-body { font-family:sans-serif; background:#f9fafb; padding:20px; }
-#calendar { max-width:600px; margin:auto; background:white; padding:20px; border-radius:8px; }
-.fc-day-past { background:#f0f0f0 !important; pointer-events:none; }
-.fc-day-available { background:#d1fae5 !important; cursor:pointer; }
-.fc-day-selected { background:#93c5fd !important; }
-.fc-event { background:#f87171 !important; border:none; pointer-events:none; opacity:0.8; }
-button { display:block; margin:20px auto; background:#2563eb; color:white; padding:10px 20px; border:none; border-radius:6px; font-size:16px; cursor:pointer; }
-</style></head>
+<head>
+  <meta charset="UTF-8" />
+  <title>Booking Calendar</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.css" rel="stylesheet" />
+  <style>
+    body {
+      font-family: sans-serif;
+      background: #f9fafb;
+      padding: 20px;
+    }
+    #calendar {
+      max-width: 600px;
+      margin: auto;
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+    }
+    .fc-day-past {
+      background: #f0f0f0 !important;
+      pointer-events: none;
+      opacity: 0.6;
+    }
+    .fc-day-available {
+      background: #d1fae5 !important;
+      cursor: pointer;
+    }
+    .fc-day-selected {
+      background: #93c5fd !important;
+    }
+    .fc-event {
+      background: #f87171 !important;
+      border: none;
+      pointer-events: none;
+      opacity: 0.8;
+    }
+    button {
+      display: block;
+      margin: 20px auto;
+      background: #2563eb;
+      color: white;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 6px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+  </style>
+</head>
 <body>
-<h2 style="text-align:center;">Booking Calendar</h2><div id="calendar"></div><button id="bookBtn">Book Selected Dates</button>
-<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
-<script>
-const params = new URLSearchParams(window.location.search), a_id = params.get('a_id'), calendarUrl = 'https://script.google.com/macros/s/AKfycbyJ-MgrVaVhGNgp7YbBwfNq_GWmJuY38z4_BAkwFpoWtR3QbYn-6D6rCnfLxMeMFi2S3w/exec';
-if (!a_id) { alert('Missing a_id'); throw 'No a_id'; }
-let booked = new Set(), selected = new Set();
+  <h2 style="text-align:center;">Booking Calendar</h2>
+  <div id="calendar"></div>
+  <button id="bookBtn">Book Selected Dates</button>
 
-const cal = new FullCalendar.Calendar(document.getElementById('calendar'), {
-  initialView:'dayGridMonth',
-  events(fetchInfo, success) {
-    fetch(calendarUrl + `?mode=list&a_id=${a_id}`)
-      .then(r=>r.json()).then(data=>{
-        alert('Fetched booked dates: '+JSON.stringify(data.dates));
-        booked = new Set(data.dates);
-        success(data.dates.map(d=>({ start:d, display:'background' })));
-      }).catch(e=>{alert('Load error'); success([]);});
-  },
-  selectable:true,
-  dateClick(info){
-    const d = info.dateStr, today = new Date().setHours(0,0,0,0);
-    if (info.date.valueOf()<today||booked.has(d)) return;
-    const el = info.dayEl;
-    if (selected.has(d)){ selected.delete(d); el.classList.remove('fc-day-selected'); }
-    else { selected.add(d); el.classList.add('fc-day-selected'); }
-  },
-  datesSet(){ setTimeout(()=>{document.querySelectorAll('.fc-daygrid-day').forEach(cell=>{
-      const date=cell.getAttribute('data-date');
-      if (!date) return;
-      const d = new Date(date).setHours(0,0,0,0), today = new Date().setHours(0,0,0,0);
-      if (d<today) cell.classList.add('fc-day-past');
-      else if (!booked.has(date)) cell.classList.add('fc-day-available');
-    })},50);
-  }
-});
-cal.render();
+  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const a_id = params.get('a_id');
+    const calendarUrl = 'https://script.google.com/macros/s/AKfycbySBCAZmyStHKxsPivxortstudha_SnTCERi1oYSH5Eu33hjLsA2dXQgmF7hTIAdLz3sQ/exec'; // replace with your Apps Script URL
 
-document.getElementById('bookBtn').onclick = async ()=>{
-  if (!selected.size) return alert('No dates selected');
-  for (const date of selected) {
-    alert('Booking request: '+date);
-    const res=await fetch(calendarUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({a_id,date,source:'Owner'})});
-    const txt = await res.text();
-    alert('Response: '+res.status+' => '+txt);
-    if (!res.ok) return alert('Fail: '+txt);
-  }
-  alert('Booking successful');
-  selected.clear();
-  cal.refetchEvents();
-};
-</script></body></html>
+    if (!a_id) {
+      alert('Missing a_id in the URL. Please add ?a_id=apt001');
+      throw new Error('Missing a_id');
+    }
+
+    let booked = new Set();
+    let selected = new Set();
+
+    const calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
+      initialView: 'dayGridMonth',
+      events: async (fetchInfo, successCallback, failureCallback) => {
+        try {
+          const res = await fetch(calendarUrl + `?mode=list&a_id=${a_id}`);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const data = await res.json();
+          booked = new Set(data.dates || []);
+          const events = data.dates.map(date => ({ start: date, display: 'background' }));
+          successCallback(events);
+        } catch (err) {
+          alert('[Error Loading Events] ' + err.message);
+          failureCallback(err);
+        }
+      },
+      selectable: true,
+      dateClick(info) {
+        const clickedDate = info.dateStr;
+        const today = new Date().setHours(0, 0, 0, 0);
+        const clickDay = info.date.setHours(0, 0, 0, 0);
+
+        if (clickDay < today) {
+          alert("You can't select past dates.");
+          return;
+        }
+        if (booked.has(clickedDate)) {
+          alert("This date is already booked.");
+          return;
+        }
+
+        const el = info.dayEl;
+        if (selected.has(clickedDate)) {
+          selected.delete(clickedDate);
+          el.classList.remove('fc-day-selected');
+        } else {
+          selected.add(clickedDate);
+          el.classList.add('fc-day-selected');
+        }
+      },
+      datesSet() {
+        setTimeout(() => {
+          document.querySelectorAll('.fc-daygrid-day').forEach(cell => {
+            const date = cell.getAttribute('data-date');
+            if (!date) return;
+            const cellDate = new Date(date).setHours(0, 0, 0, 0);
+            const today = new Date().setHours(0, 0, 0, 0);
+
+            if (cellDate < today) {
+              cell.classList.add('fc-day-past');
+            } else if (!booked.has(date)) {
+              cell.classList.add('fc-day-available');
+            }
+          });
+        }, 50);
+      }
+    });
+
+    calendar.render();
+
+    document.getElementById('bookBtn').onclick = async () => {
+      if (selected.size === 0) {
+        alert('Please select at least one date to book.');
+        return;
+      }
+
+      if (!confirm(`Confirm booking for:\n\n${Array.from(selected).join('\n')}`)) return;
+
+      for (const date of selected) {
+        try {
+          const res = await fetch(calendarUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ a_id: a_id, date: date, source: 'Owner' })
+          });
+
+          const text = await res.text();
+          if (!res.ok || text.includes('Error')) {
+            throw new Error(text);
+          }
+        } catch (err) {
+          alert(`[Booking Error] Date: ${date}\nMessage: ${err.message}`);
+          return;
+        }
+      }
+
+      alert('✅ Booking successful!');
+      selected.clear();
+      calendar.refetchEvents();
+    };
+  </script>
+</body>
+</html>
