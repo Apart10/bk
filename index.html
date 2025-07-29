@@ -9,6 +9,10 @@
     body { font-family: Arial, sans-serif; margin: 0; padding: 10px; }
     #calendar { max-width: 600px; margin: auto; }
     #bookBtn { margin-top: 10px; width: 100%; padding: 10px; font-size: 16px; }
+    .fc-daygrid-day {
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+    }
   </style>
 </head>
 <body>
@@ -21,11 +25,11 @@
 <script>
   const WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbxKf1SyYft1ClKgZgaaesA0PTf00lRi0Y4X9EHP30-uDzaWlMjz2HC4JTpXFAUDprxEUQ/exec'; // <-- Replace with your Apps Script Web App URL
   const a_id = 'apt001'; // Change apartment ID as needed
-  let bookedRanges = [];
-  let calendar;
-  let selectedDates = [];
+  let bookedDates = new Set();
+  let pastDates = new Set();
+  let selectedDates = new Set();
 
-  // Format Date to YYYY-MM-DD for FullCalendar
+  // Format Date to YYYY-MM-DD for FullCalendar and easy comparison
   function formatYMD(date) {
     return date.toISOString().split('T')[0];
   }
@@ -57,77 +61,50 @@
   async function initCalendar() {
     const bookings = await fetchBookings();
 
-    bookedRanges = [];
-    let bookedDates = new Set();
-
+    bookedDates.clear();
     bookings.forEach(b => {
       const rangeDates = expandDates(b.start, b.end);
       rangeDates.forEach(d => bookedDates.add(d));
-      bookedRanges.push({start: b.start, end: b.end});
     });
 
     const today = new Date();
-    const pastDates = [];
-    for(let d = new Date(today); d > new Date(today.getFullYear(), 0, 1); d.setDate(d.getDate() - 1)) {
-      pastDates.push(formatYMD(d));
-    }
+    pastDates.clear();
+    // Collect past dates in this month and before
+    // (we'll handle past dates on the fly instead)
 
-    // Create FullCalendar instance
     const calendarEl = document.getElementById('calendar');
 
-    calendar = new FullCalendar.Calendar(calendarEl, {
+    let calendar = new FullCalendar.Calendar(calendarEl, {
       initialView: 'dayGridMonth',
-      selectable: true,
-      selectOverlap: false,
-      selectAllow: function(selectInfo) {
-        // Don't allow selecting past dates or booked dates
-        const start = selectInfo.startStr;
-        const end = new Date(selectInfo.end);
-        end.setDate(end.getDate() - 1); // FullCalendar exclusive end
-
-        let current = new Date(start);
-        while(current <= end) {
-          const d = formatYMD(current);
-          if (bookedDates.has(d) || new Date(d) < today) return false;
-          current.setDate(current.getDate() + 1);
-        }
-        return true;
-      },
-      select: function(info) {
-        selectedDates = [];
-        const start = info.start;
-        const end = new Date(info.end);
-        end.setDate(end.getDate() - 1);
-        let current = new Date(start);
-        while (current <= end) {
-          selectedDates.push(formatYMD(current));
-          current.setDate(current.getDate() + 1);
-        }
-        updateBookButton();
-      },
-      unselect: function() {
-        selectedDates = [];
-        updateBookButton();
-      },
+      // Disable built-in selection, we do manual day clicks
+      selectable: false,
       dayCellDidMount: function(info) {
-        const d = info.date;
-        const dateStr = formatYMD(d);
+        const dateStr = formatYMD(info.date);
 
-        // Grey out past dates
-        if (d < today) {
+        // Style cells:
+        if (info.date < today) {
+          // Past dates grey and disabled
           info.el.style.backgroundColor = '#eee';
           info.el.style.color = '#999';
-        }
-        // Red for booked
-        else if (bookedDates.has(dateStr)) {
+          info.el.style.pointerEvents = 'none';
+          info.el.style.cursor = 'default';
+        } else if (bookedDates.has(dateStr)) {
+          // Booked dates red and disabled
           info.el.style.backgroundColor = '#ff4d4d';
           info.el.style.color = 'white';
           info.el.style.pointerEvents = 'none';
-        }
-        // Green for available
-        else {
+          info.el.style.cursor = 'default';
+        } else {
+          // Available dates green
           info.el.style.backgroundColor = '#b0f2b6';
           info.el.style.color = '#000';
+          info.el.style.pointerEvents = 'auto';
+          info.el.style.cursor = 'pointer';
+
+          // Add click listener for selecting/deselecting
+          info.el.addEventListener('click', () => {
+            toggleDateSelection(dateStr, info.el);
+          });
         }
       }
     });
@@ -135,17 +112,46 @@
     calendar.render();
   }
 
+  // Toggle date in selectedDates and update cell color
+  function toggleDateSelection(dateStr, cellEl) {
+    if (selectedDates.has(dateStr)) {
+      // Deselect
+      selectedDates.delete(dateStr);
+      cellEl.style.backgroundColor = '#b0f2b6'; // green
+      cellEl.style.color = '#000';
+    } else {
+      // Select
+      selectedDates.add(dateStr);
+      cellEl.style.backgroundColor = '#4a90e2'; // blue
+      cellEl.style.color = 'white';
+    }
+    updateBookButton();
+  }
+
   function updateBookButton() {
     const btn = document.getElementById('bookBtn');
-    btn.disabled = selectedDates.length === 0;
+    btn.disabled = selectedDates.size === 0;
   }
 
   // POST new booking
   async function submitBooking() {
-    if (selectedDates.length === 0) return alert("Select dates first");
+    if (selectedDates.size === 0) return alert("Select dates first");
 
-    const start = selectedDates[0];
-    const end = selectedDates[selectedDates.length - 1];
+    // Convert selectedDates Set to array and sort
+    const datesArr = Array.from(selectedDates).sort();
+
+    // Validate continuous dates (optional but recommended)
+    for (let i = 1; i < datesArr.length; i++) {
+      const prev = new Date(datesArr[i - 1]);
+      const curr = new Date(datesArr[i]);
+      prev.setDate(prev.getDate() + 1);
+      if (curr.getTime() !== prev.getTime()) {
+        return alert("Please select continuous dates only");
+      }
+    }
+
+    const start = datesArr[0];
+    const end = datesArr[datesArr.length - 1];
 
     const res = await fetch(WEBAPP_URL, {
       method: 'POST',
@@ -156,10 +162,10 @@
 
     if (data.success) {
       alert("Booking successful!");
-      selectedDates = [];
-      calendar.unselect();
-      // Refresh calendar bookings
-      calendar.destroy();
+      selectedDates.clear();
+      // Rerender calendar to refresh booked dates
+      const calendarEl = document.getElementById('calendar');
+      calendarEl.innerHTML = '';
       await initCalendar();
       updateBookButton();
     } else {
