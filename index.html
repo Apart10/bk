@@ -24,7 +24,7 @@
   <script>
     const params = new URLSearchParams(window.location.search);
     const a_id = params.get('a_id');
-    const calendarUrl = 'https://script.google.com/macros/s/AKfycbzVALlHUDFYzlkuiX2Yvm2dpdHbcwVMkWP8uroYYK74RSSZIkCr6JQwjHCZaEe_ofIcxQ/exec'; // ← change this
+    const calendarUrl = 'https://script.google.com/macros/s/AKfycbzQnTrXhxihYaaCm58suLBMcva92nvWFTExvvQrnp3ysT1FNXfr7o-LMpWRn4XmIRa7dw/exec';
 
     if (!a_id) { alert('Missing apartment ID'); throw new Error(); }
 
@@ -34,36 +34,38 @@
     const calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
       initialView: 'dayGridMonth',
       events(fetchInfo, success) {
-        fetch(calendarUrl + `?mode=list&a_id=${a_id}`)
-          .then(r => r.json()).then(data => {
+        fetch(`${calendarUrl}?mode=list&a_id=${a_id}`)
+          .then(r => r.json())
+          .then(data => {
             bookedDates = new Set(data.dates);
             const events = data.dates.map(d => ({ start: d, display: 'background' }));
             success(events);
           })
-          .catch(_=> success([]));
+          .catch(_ => success([]));
       },
       selectable: true,
       dateClick(info) {
         const d = info.dateStr;
         const today = new Date().setHours(0,0,0,0);
         if (info.date.valueOf() < today || bookedDates.has(d)) return;
+        const el = info.dayEl;
         if (selectedDates.has(d)) {
           selectedDates.delete(d);
-          info.dayEl.classList.remove('fc-day-selected');
+          el.classList.remove('fc-day-selected');
         } else {
           selectedDates.add(d);
-          info.dayEl.classList.add('fc-day-selected');
+          el.classList.add('fc-day-selected');
         }
       },
       datesSet() {
         setTimeout(() => {
           document.querySelectorAll('.fc-daygrid-day').forEach(cell => {
-            const date = cell.getAttribute('data-date');
-            if (!date) return;
-            const dd = new Date(date).setHours(0,0,0,0);
+            const d = cell.getAttribute('data-date');
+            if (!d) return;
+            const dd = new Date(d).setHours(0,0,0,0);
             const today = new Date().setHours(0,0,0,0);
             if (dd < today) cell.classList.add('fc-day-past');
-            else if (!bookedDates.has(date)) cell.classList.add('fc-day-available');
+            else if (!bookedDates.has(d)) cell.classList.add('fc-day-available');
           });
         }, 50);
       }
