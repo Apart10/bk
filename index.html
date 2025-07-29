@@ -1,115 +1,118 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Apartment Booking Calendar</title>
+  <meta charset="UTF-8" />
+  <title>Apartment Booking</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.css" rel="stylesheet">
   <style>
-    body { font-family: sans-serif; background: #f9fafb; padding: 20px; }
-    #calendar { max-width: 900px; margin: auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-    .fc-day-past { background-color: #f0f0f0 !important; pointer-events: none; opacity: 0.6; }
-    .fc-day-available { background-color: #d1fae5 !important; }
-    .fc-day-selected { background-color: #93c5fd !important; }
+    body { font-family: Arial; padding: 20px; background: #f9fafb; }
+    #calendar { max-width: 800px; margin: auto; background: #fff; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+    .fc-day-past { background-color: #eee !important; pointer-events: none; opacity: 0.5; }
+    .fc-day-selected { background-color: #90cdf4 !important; }
     .fc-event { background-color: #f87171 !important; border: none; }
-    button { margin: 20px auto; display: block; background: #3b82f6; color: white; padding: 10px 20px; border: none; border-radius: 8px; }
+    button { margin-top: 20px; display: block; padding: 10px 20px; font-size: 16px; background: #3b82f6; color: white; border: none; border-radius: 8px; cursor: pointer; }
   </style>
 </head>
 <body>
-  <h2 style="text-align:center;">Apartment Booking</h2>
-  <div id="calendar"></div>
-  <button id="bookBtn">Book Selected Dates</button>
 
-  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
-  <script>
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwfZJdhqOF0TlffNr-guVtsulbqnDHdnGKV9iMkfMY1xIQBPqlH0B1xfJGWyoAMlNH7lA/exec";
-    const urlParams = new URLSearchParams(window.location.search);
-    const a_id = urlParams.get("a_id") || "apt001";
-    let bookedDates = new Set();
-    let selectedDates = new Set();
+<h2 style="text-align:center;">Apartment Booking Calendar</h2>
+<div id="calendar"></div>
+<button id="bookBtn">Book Selected Dates</button>
 
-    async function fetchBookedDates() {
-      try {
-        const res = await fetch(SCRIPT_URL);
-        const data = await res.json();
-        bookedDates = new Set(data.dates);
-        renderCalendar();
-      } catch (err) {
-        alert("Error loading booked dates: " + err.message);
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
+<script>
+const params = new URLSearchParams(window.location.search);
+const a_id = params.get('a_id');
+
+if (!a_id) {
+  alert('Missing a_id parameter in URL. Please include ?a_id=apt001');
+  throw new Error("Missing a_id");
+}
+
+const scriptURL = 'PASTE_YOUR_SCRIPT_URL_HERE';
+let selectedDates = new Set();
+let bookedDates = new Set();
+
+async function fetchBookedDates() {
+  const res = await fetch(`${scriptURL}?a_id=${a_id}`);
+  const data = await res.json();
+  data.dates.forEach(date => bookedDates.add(date));
+}
+
+function formatDate(d) {
+  return d.toISOString().split('T')[0];
+}
+
+async function initCalendar() {
+  await fetchBookedDates();
+
+  const calendarEl = document.getElementById('calendar');
+  const calendar = new FullCalendar.Calendar(calendarEl, {
+    initialView: 'dayGridMonth',
+    selectable: true,
+    dateClick(info) {
+      const dateStr = info.dateStr;
+      const todayStr = formatDate(new Date());
+
+      if (dateStr < todayStr || bookedDates.has(dateStr)) return;
+
+      const cell = info.dayEl;
+      if (selectedDates.has(dateStr)) {
+        selectedDates.delete(dateStr);
+        cell.classList.remove('fc-day-selected');
+      } else {
+        selectedDates.add(dateStr);
+        cell.classList.add('fc-day-selected');
       }
-    }
+    },
+    datesSet() {
+      setTimeout(() => {
+        document.querySelectorAll('.fc-daygrid-day').forEach(cell => {
+          const date = cell.getAttribute('data-date');
+          const todayStr = formatDate(new Date());
 
-    function renderCalendar() {
-      const calendarEl = document.getElementById("calendar");
-      const calendar = new FullCalendar.Calendar(calendarEl, {
-        initialView: "dayGridMonth",
-        selectable: true,
-        dateClick: function(info) {
-          const dateStr = info.dateStr;
-          const today = new Date();
-          today.setHours(0,0,0,0);
-
-          if (info.date < today || bookedDates.has(dateStr)) return;
-
-          const cell = info.dayEl;
-          if (selectedDates.has(dateStr)) {
-            selectedDates.delete(dateStr);
-            cell.classList.remove("fc-day-selected");
-            cell.classList.add("fc-day-available");
-          } else {
-            selectedDates.add(dateStr);
-            cell.classList.add("fc-day-selected");
-            cell.classList.remove("fc-day-available");
+          if (date < todayStr) {
+            cell.classList.add('fc-day-past');
+          } else if (bookedDates.has(date)) {
+            const div = document.createElement('div');
+            div.className = 'fc-event';
+            div.innerText = 'Booked';
+            cell.appendChild(div);
+            cell.style.pointerEvents = 'none';
           }
-        },
-        datesSet: function() {
-          setTimeout(() => {
-            document.querySelectorAll(".fc-daygrid-day").forEach(cell => {
-              const dateStr = cell.getAttribute("data-date");
-              const dateObj = new Date(dateStr);
-              const today = new Date();
-              today.setHours(0,0,0,0);
-
-              if (dateObj < today) {
-                cell.classList.add("fc-day-past");
-              } else if (bookedDates.has(dateStr)) {
-                cell.classList.add("fc-event");
-                cell.style.pointerEvents = "none";
-              } else if (!selectedDates.has(dateStr)) {
-                cell.classList.add("fc-day-available");
-              }
-            });
-          }, 300);
-        }
-      });
-      calendar.render();
-    }
-
-    document.getElementById("bookBtn").onclick = async () => {
-      if (selectedDates.size === 0) return alert("No dates selected.");
-
-      const dates = Array.from(selectedDates).sort();
-      const confirmMsg = "Confirm booking for:\n\n" + dates.join("\n");
-      if (!confirm(confirmMsg)) return;
-
-      try {
-        const res = await fetch(SCRIPT_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ a_id, dates })
         });
-        const result = await res.json();
-        if (result.status === "success") {
-          alert("Booking successful!");
-          location.reload();
-        } else {
-          alert("Booking error: " + result.message);
-        }
-      } catch (err) {
-        alert("Network error: " + err.message);
-      }
-    };
+      }, 200);
+    }
+  });
 
-    fetchBookedDates();
-  </script>
+  calendar.render();
+}
+
+document.getElementById('bookBtn').addEventListener('click', async () => {
+  if (selectedDates.size === 0) return alert("No dates selected");
+
+  const dates = Array.from(selectedDates).sort();
+  const start = dates[0];
+  const end = dates[dates.length - 1];
+
+  if (!confirm(`Confirm booking from ${start} to ${end}?`)) return;
+
+  try {
+    const res = await fetch(scriptURL, {
+      method: 'POST',
+      body: JSON.stringify({ a_id, start, end, source: 'Owner' }),
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const text = await res.text();
+    alert(text);
+    location.reload();
+  } catch (err) {
+    alert("Booking failed: " + err.message);
+  }
+});
+
+initCalendar();
+</script>
 </body>
 </html>
