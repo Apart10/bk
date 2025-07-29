@@ -6,99 +6,82 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.css" rel="stylesheet">
   <style>
-    body { font-family: 'Helvetica Neue', sans-serif; background: #f9fafb; padding: 20px; }
-    #calendar { max-width: 900px; margin: 0 auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-    .fc-day-past { background-color: #f0f0f0 !important; pointer-events: none; opacity: 0.6; }
-    .fc-day-available { background-color: #d1fae5 !important; cursor: pointer; }
-    .fc-day-selected { background-color: #93c5fd !important; }
-    .fc-event { background-color: #f87171 !important; border: none; pointer-events: none; }
-    button { display: block; margin: 20px auto; background-color: #3b82f6; color: white; padding: 10px 20px; border: none; font-size: 16px; border-radius: 8px; cursor: pointer; }
+    body { font-family: sans-serif; background: #f9fafb; padding: 20px; }
+    #calendar { max-width: 600px; margin: auto; background: white; padding: 20px; border-radius: 8px; }
+    .fc-day-past { background: #f0f0f0 !important; pointer-events: none; }
+    .fc-day-available { background: #d1fae5 !important; cursor: pointer; }
+    .fc-day-selected { background: #93c5fd !important; }
+    .fc-event { background: #f87171 !important; border: none; pointer-events: none; opacity: 0.8; }
+    button { display: block; margin: 20px auto; background: #2563eb; color: white; padding: 10px 20px; border: none; border-radius: 6px; font-size: 16px; cursor: pointer; }
   </style>
 </head>
 <body>
-  <h2 style="text-align:center;">Apartment Calendar</h2>
+  <h2 style="text-align:center;">Apartment Booking Calendar</h2>
   <div id="calendar"></div>
   <button id="bookBtn">Book Selected Dates</button>
 
   <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
   <script>
-    const urlParams = new URLSearchParams(window.location.search);
-    const a_id = urlParams.get('a_id');
-    const calendarIdMap = {
-      apt001: 'your_calendar_id_1@group.calendar.google.com',
-      apt002: 'your_calendar_id_2@group.calendar.google.com'
-    };
-    const calendarId = calendarIdMap[a_id];
-    if (!calendarId) {
-      alert('Invalid apartment ID');
-      throw new Error('Invalid apartment ID');
-    }
+    const params = new URLSearchParams(window.location.search);
+    const a_id = params.get('a_id');
+    const calendarUrl = 'https://script.google.com/macros/s/AKfycbzVALlHUDFYzlkuiX2Yvm2dpdHbcwVMkWP8uroYYK74RSSZIkCr6JQwjHCZaEe_ofIcxQ/exec'; // ← change this
 
-    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwgNcEmZ5mpb7zTyszAuqVCcbLdoO5rgHOtHz-5KTGQ8UmJVQLLnL8HYjPDWRPTDC0Ucw/exec'; // paste your Apps Script URL here
+    if (!a_id) { alert('Missing apartment ID'); throw new Error(); }
 
-    let booked = new Set();
-    let selected = new Set();
+    let bookedDates = new Set();
+    let selectedDates = new Set();
 
-    const calendarEl = document.getElementById('calendar');
-    const calendar = new FullCalendar.Calendar(calendarEl, {
+    const calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
       initialView: 'dayGridMonth',
-      events(fetchInfo, successCallback) {
-        fetch(`${SCRIPT_URL}?a_id=${a_id}&_mode=list`)
-          .then(r => r.json())
-          .then(events => {
-            successCallback(events.map(d => ({
-              start: d.start,
-              display: 'background'
-            })));
-            booked = new Set(events.map(d => d.start));
-          }).catch(() => successCallback([]));
+      events(fetchInfo, success) {
+        fetch(calendarUrl + `?mode=list&a_id=${a_id}`)
+          .then(r => r.json()).then(data => {
+            bookedDates = new Set(data.dates);
+            const events = data.dates.map(d => ({ start: d, display: 'background' }));
+            success(events);
+          })
+          .catch(_=> success([]));
       },
       selectable: true,
       dateClick(info) {
         const d = info.dateStr;
         const today = new Date().setHours(0,0,0,0);
-        if (info.date.valueOf() < today) return;
-        if (booked.has(d)) return;
-        const el = info.dayEl;
-        if (selected.has(d)) {
-          selected.delete(d);
-          el.classList.remove('fc-day-selected');
+        if (info.date.valueOf() < today || bookedDates.has(d)) return;
+        if (selectedDates.has(d)) {
+          selectedDates.delete(d);
+          info.dayEl.classList.remove('fc-day-selected');
         } else {
-          selected.add(d);
-          el.classList.add('fc-day-selected');
+          selectedDates.add(d);
+          info.dayEl.classList.add('fc-day-selected');
         }
       },
       datesSet() {
         setTimeout(() => {
           document.querySelectorAll('.fc-daygrid-day').forEach(cell => {
-            const d = cell.getAttribute('data-date');
-            const dd = new Date(d).setHours(0,0,0,0);
+            const date = cell.getAttribute('data-date');
+            if (!date) return;
+            const dd = new Date(date).setHours(0,0,0,0);
             const today = new Date().setHours(0,0,0,0);
             if (dd < today) cell.classList.add('fc-day-past');
-            else if (!booked.has(d)) cell.classList.add('fc-day-available');
+            else if (!bookedDates.has(date)) cell.classList.add('fc-day-available');
           });
-        }, 100);
+        }, 50);
       }
     });
     calendar.render();
 
     document.getElementById('bookBtn').onclick = async () => {
-      if (!selected.size) { alert('No dates selected'); return; }
-      const renter = prompt('Enter renter name (or leave blank):', '');
-      for (const d of selected) {
-        const res = await fetch(SCRIPT_URL, {
+      if (!selectedDates.size) { alert('Select at least one date'); return; }
+      for (const date of selectedDates) {
+        const res = await fetch(calendarUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ a_id, date: d, source: 'Owner', renter: renter || '' })
+          body: JSON.stringify({ a_id, date, source: 'Owner' })
         });
-        if (!res.ok) {
-          const txt = await res.text();
-          alert(`Booking ${d} failed: ${txt}`);
-          return;
-        }
+        if (!res.ok) { alert('Booking failed: ' + (await res.text())); return; }
       }
-      alert('Booking successful');
-      selected.clear();
+      alert('Booking successful!');
+      selectedDates.clear();
       calendar.refetchEvents();
     };
   </script>
